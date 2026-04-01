@@ -1,0 +1,45 @@
+---
+- name: Delete k3s stack
+  hosts: localhost
+  gather_facts: false
+  vars:
+    deployment_host_ip: "{{ deployment_host_ip }}"
+    deployment_host_user_name: "{{ deployment_host_user_name }}"
+    name: "{{ name }}"
+    namespace: "{{ namespace }}"
+  tasks:
+    - name: Add deployment host to inventory
+      add_host:
+        name: "{{ deployment_host_ip }}"
+        ansible_host: "{{ deployment_host_ip }}"
+        ansible_user: "{{ deployment_host_user_name }}"
+        groups: k3s_stack_hosts
+
+- name: Remove k3s stack from target host
+  hosts: k3s_stack_hosts
+  gather_facts: false
+  become: true
+  vars:
+    name: "{{ hostvars['localhost']['name'] }}"
+    namespace: "{{ hostvars['localhost']['namespace'] }}"
+  tasks:
+    - name: Remove the k3s Stack from target host
+      ansible.builtin.command: >
+        kubectl delete namespace {{ namespace }}
+      register: remove_result
+      ignore_errors: true
+
+    - name: Display removal result
+      ansible.builtin.debug:
+        var: remove_result.stdout
+
+    - name: Remove k3s manifest file from target host
+      ansible.builtin.file:
+        path: "/tmp/stacks/{{ name }}.yaml"
+        state: absent
+
+    - name: Remove /tmp/stacks directory if empty
+      ansible.builtin.file:
+        path: "/tmp/stacks"
+        state: absent
+      ignore_errors: true

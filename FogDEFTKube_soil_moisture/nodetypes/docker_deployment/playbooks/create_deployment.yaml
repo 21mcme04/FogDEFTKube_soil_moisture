@@ -1,0 +1,206 @@
+# ---
+# - name: Add hosts to inventory
+#   hosts: localhost
+#   gather_facts: false
+#   tasks:
+#     - name: Add manager host to inventory
+#       add_host:
+#         name: "{{ deployment_host_ip }}"
+#         ansible_host: "{{ deployment_host_ip }}"
+#         ansible_user: "{{ deployment_host_user_name }}"
+#         groups: swarm_manager
+
+# - name: Create Docker deployment from manager
+#   hosts: swarm_manager
+#   gather_facts: false
+#   become: true
+#   tasks:
+#     - name: Debug deployment parameters
+#       debug:
+#         msg:
+#           - "Service name: {{ svc_name }}"
+#           - "Image: {{ depl_url }}"
+#           - "Replicas: {{ replicas }}"
+#           - "Manager: {{ deployment_host_ip }}"
+
+#     - name: Check if Docker Swarm is active
+#       shell: docker info --format '{{ "{{" }}.Swarm.LocalNodeState{{ "}}" }}'
+#       register: swarm_state
+#       changed_when: false
+
+#     - name: Debug swarm state
+#       debug:
+#         msg: "Swarm state: {{ swarm_state.stdout }}"
+
+#     - name: Fail if not a swarm manager
+#       fail:
+#         msg: "Node is not a swarm manager"
+#       when: swarm_state.stdout != "active" or "manager" not in swarm_state.stdout
+
+#     - name: List swarm nodes
+#       command: docker node ls
+#       register: swarm_nodes
+#       changed_when: false
+
+#     - name: Debug swarm nodes
+#       debug:
+#         var: swarm_nodes.stdout_lines
+
+#     - name: Check if service already exists
+#       shell: docker service ls --filter name={{ svc_name }} --format "{{ "{{" }}.Name{{ "}}" }}"
+#       register: existing_service
+#       changed_when: false
+#       ignore_errors: true
+
+#     - name: Debug existing service check
+#       debug:
+#         msg: "Existing service: {{ existing_service.stdout }}"
+
+#     - name: Create Docker service
+#       shell: |
+#         docker service create \
+#           --name {{ svc_name }} \
+#           --replicas {{ replicas }} \
+#           --publish published=8080,target=80 \
+#           {{ depl_url }}
+#       register: create_service_result
+#       when: existing_service.stdout != svc_name
+#       ignore_errors: true
+
+#     - name: Debug service creation result
+#       debug:
+#         msg:
+#           - "Return code: {{ create_service_result.rc | default('skipped') }}"
+#           - "Stdout: {{ create_service_result.stdout | default('skipped') }}"
+#           - "Stderr: {{ create_service_result.stderr | default('skipped') }}"
+
+#     - name: Wait for service to be ready
+#       shell: docker service ps {{ svc_name }} --filter desired-state=running --format "{{ "{{" }}.CurrentState{{ "}}" }}"
+#       register: service_readiness
+#       retries: 10
+#       delay: 3
+#       until: "'Running' in service_readiness.stdout"
+#       when: create_service_result.rc == 0 or existing_service.stdout == svc_name
+#       ignore_errors: true
+
+#     - name: List all Docker services
+#       command: docker service ls
+#       register: all_services
+#       changed_when: false
+
+#     - name: Debug all services
+#       debug:
+#         var: all_services.stdout_lines
+
+#     - name: Show service tasks distribution
+#       shell: docker service ps {{ svc_name }}
+#       register: service_tasks
+#       when: existing_service.stdout == svc_name or create_service_result.rc == 0
+#       ignore_errors: true
+
+#     - name: Debug service tasks
+#       debug:
+#         var: service_tasks.stdout_lines
+#       when: service_tasks is defined and service_tasks.stdout is defined
+
+
+
+
+---
+- name: Add hosts to inventory
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Add manager host to inventory
+      add_host:
+        name: "{{ deployment_host_ip }}"
+        ansible_host: "{{ deployment_host_ip }}"
+        ansible_user: "{{ deployment_host_user_name }}"
+        groups: swarm_manager
+
+- name: Create Docker deployment from manager
+  hosts: swarm_manager
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Debug deployment parameters
+      debug:
+        msg:
+          - "Service name: {{ svc_name }}"
+          - "Image: {{ depl_url }}"
+          - "Replicas: {{ replicas }}"
+          - "Manager: {{ deployment_host_ip }}"
+
+    - name: Check if service already exists
+      shell: docker service ls --filter name={{ svc_name }} --format "{{ "{{" }}.Name{{ "}}" }}"
+      register: existing_service
+      changed_when: false
+      ignore_errors: true
+
+    - name: Debug existing service check
+      debug:
+        msg: "Existing service found: '{{ existing_service.stdout }}'"
+
+    - name: Create Docker service (exactly like manual test)
+      shell: |
+        docker service create \
+          --name {{ svc_name }} \
+          --replicas {{ replicas }} \
+          {{ depl_url }}
+      register: create_service_result
+      when: existing_service.stdout != svc_name
+      ignore_errors: true
+
+    - name: Debug service creation result
+      debug:
+        msg:
+          - "Return code: {{ create_service_result.rc | default('skipped') }}"
+          - "Stdout: {{ create_service_result.stdout | default('skipped') }}"
+          - "Stderr: {{ create_service_result.stderr | default('skipped') }}"
+
+    - name: Show service creation output
+      debug:
+        var: create_service_result
+      when: create_service_result is defined
+
+    - name: Wait for service to converge
+      shell: docker service ls --filter name={{ svc_name }} --format "{{ "{{" }}.Replicas{{ "}}" }}"
+      register: service_replicas
+      retries: 10
+      delay: 5
+      until: "replicas|string in service_replicas.stdout"
+      vars:
+        replicas: "{{ replicas }}/{{ replicas }}"
+      when: create_service_result.rc == 0 or existing_service.stdout == svc_name
+      ignore_errors: true
+
+    - name: List all Docker services
+      command: docker service ls
+      register: all_services
+      changed_when: false
+
+    - name: Show all services
+      debug:
+        var: all_services.stdout_lines
+
+    - name: Show service task distribution
+      shell: docker service ps {{ svc_name }}
+      register: service_tasks
+      when: existing_service.stdout == svc_name or (create_service_result is defined and create_service_result.rc == 0)
+      ignore_errors: true
+
+    - name: Show service tasks
+      debug:
+        var: service_tasks.stdout_lines
+      when: service_tasks is defined and service_tasks.stdout is defined
+
+    - name: Final status check
+      shell: docker service inspect {{ svc_name }} --format "{{ "{{" }}.Spec.Name{{ "}}" }}"
+      register: final_check
+      ignore_errors: true
+
+    - name: Service deployment summary
+      debug:
+        msg:
+          - "Service {{ svc_name }} deployment complete"
+          - "Final status: {{ 'SUCCESS' if final_check.rc == 0 else 'FAILED' }}"

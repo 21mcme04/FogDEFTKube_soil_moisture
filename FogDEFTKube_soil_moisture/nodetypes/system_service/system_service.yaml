@@ -1,0 +1,77 @@
+tosca_definitions_version: tosca_simple_yaml_1_3
+
+description: |
+  TOSCA node type for deploying a daemon service using systemd.
+
+metadata:
+  template_name: "docker_daemon_service.yaml"
+  template_version: "1.0"
+  template_author: "Saathvikk"
+  date_created: "08-09-2025"
+  date_modified: ""
+  description: |
+    TOSCA node type for deploying a daemon service using systemd.
+
+node_types:
+  fog.system.Service:
+    derived_from: tosca.nodes.SoftwareComponent
+
+    properties:
+      # deployment_host_ip:
+      #   type: string
+      #   description: IP address of the host where the service will be deployed.
+      #   required: true
+      # deployment_host_user_name:
+      #   type: string
+      #   description: SSH username for the host where the service will be deployed.
+      #   required: true
+      service_name:
+        type: string
+        description: Name of the daemon service.
+        required: true
+      script_url:
+        type: string
+        description: URL of the script to be deployed.
+        required: true
+      service_url:
+        type: string
+        description: URL of the systemd service file.
+        required: true
+      broker_url:
+        type: string
+        description: MQTT broker server URL.
+        required: true
+      packages:
+        type: list
+        entry_schema:
+          type: string
+        description: List of Python packages to install.
+        required: false
+
+    interfaces:
+      Standard:
+        type: tosca.interfaces.node.lifecycle.Standard
+
+        inputs:
+          deployment_host_ip:
+            value: { get_attribute: [HOST, private_address] }
+          deployment_host_user_name:
+            value: { get_property: [HOST, ssh_user] }
+          service_name:
+            value: { get_property: [SELF, service_name] }
+          script_name:
+            value: { concat: [{ get_property: [SELF, service_name] }, ".py"] }
+          script_url:
+            value: { get_property: [SELF, script_url] }
+          service_url:
+            value: { get_property: [SELF, service_url] }
+          broker_url:
+            value: { get_property: [SELF, broker_url] }
+          packages:
+            value: { get_property: [SELF, packages] }
+
+        operations:
+          create:
+            implementation: playbooks/create_daemon_service.yaml
+          delete:
+            implementation: playbooks/delete_daemon_service.yaml

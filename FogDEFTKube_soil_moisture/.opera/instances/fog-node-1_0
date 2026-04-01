@@ -1,0 +1,40 @@
+{
+  "tosca_name": {
+    "is_set": true,
+    "data": "fog-node-1"
+  },
+  "tosca_id": {
+    "is_set": true,
+    "data": "fog-node-1_0"
+  },
+  "state": {
+    "is_set": true,
+    "data": "initial"
+  },
+  "ssh_user": {
+    "is_set": true,
+    "data": {
+      "get_input": "fog-node-1-user-name"
+    }
+  },
+  "private_address": {
+    "is_set": true,
+    "data": {
+      "get_input": "fog-node-1-ip"
+    }
+  },
+  "public_address": {
+    "is_set": true,
+    "data": {
+      "get_input": "fog-node-1-ip"
+    }
+  },
+  "networks": {
+    "is_set": false,
+    "data": null
+  },
+  "ports": {
+    "is_set": false,
+    "data": null
+  }
+}

@@ -1,0 +1,12 @@
+# test_vars.yaml
+deployment_host_ip: "192.168.0.76"
+deployment_host_user_name: "pi3"
+service_name: "mqtt_publisher_service"
+script_name: "mqtt_publisher_service.py"
+script_url: "https://gist.githubusercontent.com/21mcme04/9b75e86fa1b15a8acfcf47b791a1dea6/raw/b8d45dae7313af6980d0dbfd31f285bcc65490a0/publisher.py"
+service_url: "https://gist.githubusercontent.com/21mcme04/afea367578782de63f55c101bbcfd803/raw/c090a0f19a24b73c4bba3ec011c49853f425de70/publisher.service"
+Broker_Server_URL: "fogdeft_stack_mqtt_broker:1883"
+packages:
+  - paho-mqtt
+  - RPi.GPIO
+  - adafruit-circuitpython-dht

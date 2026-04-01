@@ -1,0 +1,89 @@
+tosca_definitions_version: tosca_simple_yaml_1_3
+
+description: | 
+  Service Template for Docker Swarm to deploy a service using Docker containers 
+  using the provided URL
+
+metadata:
+  template_name: "docker_deployment.yaml"
+  template_version: "1.0"
+  template_author: "Saathvikk"
+  date_created: "08-09-2025"
+  date_modified: ""
+  description: | 
+    Service template for deploying a service using Docker containers on a Docker Swarm cluster.
+
+node_types:
+  tosca.nodes.Docker.Deployment:
+    derived_from: tosca.nodes.SoftwareComponent
+
+    properties:
+      deployment_host_ip:
+        description: IP address of the host where the Docker service will be deployed
+        type: string
+        required: true
+
+      deployment_host_user_name:
+        description: SSH username for the deployment host
+        type: string
+        required: true
+
+      depl_name:
+        description: Docker Deployment name
+        type: string
+
+      svc_name:
+        description: Docker external service name
+        type: string
+
+      depl_url:
+        description: Deployment url (Docker image URL)
+        type: string
+
+      replicas:
+        description: Number of replicas for the Docker service
+        type: integer
+        default: 1
+
+    requirements:
+      - host:
+          capability: tosca.capabilities.Container
+          relationship: tosca.relationships.HostedOn
+          occurrences: [1, 1]
+
+      - dependency:
+          capability: tosca.capabilities.Node
+          relationship: tosca.relationships.DependsOn
+          occurrences: [0, UNBOUNDED]
+
+    interfaces:
+      Standard:
+        type: tosca.interfaces.node.lifecycle.Standard
+        inputs:
+          deployment_host_ip:
+            value: { get_property: [SELF, deployment_host_ip] }
+            type: string
+
+          deployment_host_user_name:
+            value: { get_property: [SELF, deployment_host_user_name] }
+            type: string
+
+          depl_name: 
+            value: { get_property: [SELF, depl_name] }
+            type: string
+          
+          svc_name: 
+            value: { get_property: [SELF, svc_name] }
+            type: string
+
+          depl_url:
+            value: { get_property: [SELF, depl_url] }
+            type: string
+
+          replicas:
+            value: { get_property: [SELF, replicas] }
+            type: integer
+
+        operations:
+          create: playbooks/create_deployment.yaml
+          delete: playbooks/delete_deployment.yaml

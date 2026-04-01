@@ -1,0 +1,24 @@
+---
+- name: pre_configure_source
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Get K3s master attributes
+      set_fact:
+        k3s_join_token: "{{ hostvars['localhost']['k3s_join_token'] | default('') }}"
+        manager_ip: "{{ hostvars['localhost']['manager_ip'] | default('') }}"
+        k3s_server_url: "{{ hostvars['localhost']['k3s_server_url'] | default('') }}"
+
+    - name: Debug retrieved values
+      debug:
+        msg:
+          - "Retrieved k3s_join_token: {{ k3s_join_token[:20] if k3s_join_token else 'NOT FOUND' }}..."
+          - "Retrieved manager_ip: {{ manager_ip if manager_ip else 'NOT FOUND' }}"
+          - "Retrieved k3s_server_url: {{ k3s_server_url if k3s_server_url else 'NOT FOUND' }}"
+
+    - name: Transfer tokens to target
+      set_stats:
+        data:
+          k3s_join_token: "{{ k3s_join_token }}"
+          manager_ip: "{{ manager_ip }}"
+          k3s_server_url: "{{ k3s_server_url }}"

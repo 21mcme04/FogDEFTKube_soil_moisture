@@ -1,0 +1,146 @@
+---
+- name: Add hosts to inventory
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Debug deployment parameters
+      ansible.builtin.debug:
+        msg:
+          - "Host IP: {{ deployment_host_ip }}"
+          - "User: {{ deployment_host_user_name }}"
+          - "Service: {{ service_name }}"
+          - "Script: {{ script_name }}"
+          - "Script URL: {{ script_url }}"
+          - "Service URL: {{ service_url }}"
+          - "Broker URL: {{ broker_url }}"
+          - "Packages: {{ packages }}"
+
+    - name: Add target host to inventory
+      add_host:
+        name: "{{ deployment_host_ip }}"
+        ansible_host: "{{ deployment_host_ip }}"
+        ansible_user: "{{ deployment_host_user_name }}"
+        groups: daemon_hosts
+
+- name: Install dependencies and deploy daemon service
+  hosts: daemon_hosts
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Test basic connectivity
+      ansible.builtin.ping:
+
+    - name: Install pip3
+      ansible.builtin.package:
+        name: python3-pip
+        state: present
+
+    - name: Install Python packages (breaking system packages protection)
+      ansible.builtin.pip:
+        name: "{{ packages }}"
+        executable: pip3
+        break_system_packages: true
+      when: packages is defined and packages | length > 0
+
+    - name: Create service directory
+      ansible.builtin.file:
+        path: "/home/{{ ansible_user }}/services"
+        state: directory
+        mode: "0755"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+
+    - name: Download Python script
+      ansible.builtin.get_url:
+        url: "{{ script_url }}"
+        dest: "/home/{{ ansible_user }}/services/{{ script_name }}"
+        mode: "0755"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+
+    - name: Parse broker URL components
+      ansible.builtin.set_fact:
+        mqtt_host: "{{ broker_url.split(':')[0] }}"
+        mqtt_port: "{{ broker_url.split(':')[1] }}"
+
+    - name: Create environment file for service
+      ansible.builtin.copy:
+        content: |
+          MQTT_BROKER_URL={{ broker_url }}
+          MQTT_HOST={{ mqtt_host }}
+          MQTT_PORT={{ mqtt_port }}
+          SERVICE_NAME={{ service_name }}
+          SCRIPT_PATH=/home/{{ ansible_user }}/services/{{ script_name }}
+          USER_HOME=/home/{{ ansible_user }}
+          USERNAME={{ ansible_user }}
+        dest: "/etc/default/{{ service_name }}"
+        mode: "0644"
+        owner: root
+        group: root
+
+    - name: Download systemd service file
+      ansible.builtin.get_url:
+        url: "{{ service_url }}"
+        dest: "/tmp/{{ service_name }}_original.service"
+        mode: "0644"
+
+    - name: Update service file to use environment file and variables
+      ansible.builtin.replace:
+        path: "/tmp/{{ service_name }}_original.service"
+        regexp: "{{ item.regexp }}"
+        replace: "{{ item.replace }}"
+      loop:
+        - { regexp: "User=.*", replace: "User={{ ansible_user }}" }
+        - {
+            regexp: "WorkingDirectory=.*",
+            replace: "WorkingDirectory=/home/{{ ansible_user }}/services",
+          }
+        - {
+            regexp: "ExecStart=.*",
+            replace: "ExecStart=/usr/bin/python3 /home/{{ ansible_user }}/services/{{ script_name }}",
+          }
+      register: service_updated
+
+    - name: Add EnvironmentFile directive to service file
+      ansible.builtin.lineinfile:
+        path: "/tmp/{{ service_name }}_original.service"
+        line: "EnvironmentFile=/etc/default/{{ service_name }}"
+        insertafter: "WorkingDirectory=.*"
+        state: present
+
+    - name: Remove any hardcoded environment variables from service file
+      ansible.builtin.replace:
+        path: "/tmp/{{ service_name }}_original.service"
+        regexp: "^Environment=.*"
+        replace: ""
+
+    - name: Copy updated service file to systemd directory
+      ansible.builtin.copy:
+        src: "/tmp/{{ service_name }}_original.service"
+        dest: "/etc/systemd/system/{{ service_name }}.service"
+        remote_src: yes
+        mode: "0644"
+
+    - name: Reload systemd daemon
+      ansible.builtin.systemd:
+        daemon_reload: yes
+
+    - name: Enable and start service
+      ansible.builtin.systemd:
+        name: "{{ service_name }}"
+        enabled: yes
+        state: started
+
+    - name: Check service status
+      ansible.builtin.systemd:
+        name: "{{ service_name }}"
+      register: service_status
+
+    - name: Display service status
+      ansible.builtin.debug:
+        msg: "Service {{ service_name }} is {{ service_status.status.ActiveState }}"
+
+    - name: Show environment file location
+      ansible.builtin.debug:
+        msg: "Environment file created at: /etc/default/{{ service_name }}"

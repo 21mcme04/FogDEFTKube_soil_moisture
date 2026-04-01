@@ -1,0 +1,6 @@
+fog-node-1-ip: "192.168.0.204"
+fog-node-1-user-name: "pi1"
+fog-node-3-ip: "192.168.0.237"
+fog-node-3-user-name: "pi2"
+fog-node-2-ip: "192.168.0.76"
+fog-node-2-user-name: "pi3"

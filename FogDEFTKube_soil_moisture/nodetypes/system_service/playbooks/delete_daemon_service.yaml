@@ -1,0 +1,101 @@
+---
+- name: Add hosts to inventory
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Add target host to inventory
+      add_host:
+        name: "{{ deployment_host_ip }}"
+        ansible_host: "{{ deployment_host_ip }}"
+        ansible_user: "{{ deployment_host_user_name }}"
+        groups: daemon_hosts
+
+- name: Remove daemon service and cleanup
+  hosts: daemon_hosts
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Debug deletion parameters
+      debug:
+        msg:
+          - "Removing service: {{ service_name }}"
+          - "Script name: {{ script_name }}"
+          - "Host: {{ deployment_host_ip }}"
+
+    - name: Stop service
+      systemd:
+        name: "{{ service_name }}"
+        state: stopped
+      ignore_errors: true
+
+    - name: Disable service
+      systemd:
+        name: "{{ service_name }}"
+        enabled: false
+      ignore_errors: true
+
+    - name: Kill any remaining processes
+      shell: "pkill -f {{ service_name }} || true"
+      ignore_errors: true
+
+    - name: Remove service file (we know it's in /etc/systemd/system/)
+      file:
+        path: "/etc/systemd/system/{{ service_name }}.service"
+        state: absent
+
+    - name: Remove environment file (we know it's in /etc/default/)
+      file:
+        path: "/etc/default/{{ script_name }}"
+        state: absent
+
+    - name: Remove script file (we know it's in /home/user/services/)
+      file:
+        path: "/home/{{ ansible_user }}/services/{{ script_name }}"
+        state: absent
+
+    - name: Remove services directory
+      file:
+        path: "/home/{{ ansible_user }}/services"
+        state: absent
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: true
+
+    - name: Reset failed systemd state
+      shell: "systemctl reset-failed {{ service_name }}"
+      ignore_errors: true
+
+    - name: Remove Python packages
+      pip:
+        name: "{{ packages }}"
+        state: absent
+        executable: pip3
+        break_system_packages: true
+      ignore_errors: true
+      when: packages is defined
+
+- name: Verify cleanup
+  hosts: daemon_hosts
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Check if service is stopped
+      shell: "systemctl is-active {{ service_name }}"
+      register: service_status
+      ignore_errors: true
+      changed_when: false
+
+    - name: Check if processes are gone
+      shell: "ps aux | grep {{ service_name }} | grep -v grep || echo 'NONE'"
+      register: remaining_processes
+      changed_when: false
+
+    - name: Show cleanup summary
+      debug:
+        msg:
+          - "Cleanup Summary"
+          - "Service status: {{ service_status.stdout | default('inactive') }}"
+          - "Remaining processes: {{ remaining_processes.stdout }}"
+          - "Status: {{ 'SUCCESS' if service_status.stdout == 'inactive' and 'NONE' in remaining_processes.stdout else 'Check manually' }}"

@@ -1,0 +1,35 @@
+tosca_definitions_version: tosca_simple_yaml_1_3
+
+description: Getting the token from kubernetes k3s manager and transferring it to worker nodes
+
+relationship_types:
+  fog.k3s.relationships.TokenTransfer:
+    derived_from: tosca.relationships.DependsOn
+
+    attributes:
+      k3s_join_token:
+        type: string
+
+      manager_ip:
+        type: string
+
+      k3s_server_url:
+        type: string
+
+    interfaces:
+      Configure:
+        operations:
+          pre_configure_source:
+            inputs:
+              k3s_join_token:
+                value: { get_attribute: [TARGET, k3s_join_token] }
+                type: string
+
+              manager_ip:
+                value: { get_attribute: [TARGET, manager_ip] }
+                type: string
+
+              k3s_server_url:
+                value: { get_attribute: [TARGET, k3s_server_url] }
+
+            implementation: playbooks/pre_configure_source.yaml

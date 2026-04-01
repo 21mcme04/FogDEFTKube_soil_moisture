@@ -1,0 +1,131 @@
+---
+- name: Add manager to inventory
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Add manager host to inventory
+      add_host:
+        name: "{{ manager_ip }}"
+        ansible_host: "{{ manager_ip }}"
+        ansible_user: "{{ manager_user_name }}"
+        groups: k3s_manager
+
+- name: Install K3s with Docker
+  hosts: k3s_manager
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Check if Docker is already installed
+      shell: docker --version
+      register: docker_check
+      ignore_errors: true
+      changed_when: false
+
+    - name: Debug Docker status
+      debug:
+        msg: "Docker status: {{ 'INSTALLED' if docker_check.rc == 0 else 'NOT INSTALLED' }}"
+
+    - name: Remove conflicting packages
+      apt:
+        name:
+          - containerd
+          - runc
+          - containerd.io
+        state: absent
+        purge: yes
+      ignore_errors: true
+      when: docker_check.rc != 0
+
+    - name: Update package cache
+      apt:
+        update_cache: yes
+      when: docker_check.rc != 0
+
+    - name: Install Docker and dependencies
+      apt:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+        state: present
+      when: docker_check.rc != 0
+
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/debian/gpg
+        state: present
+      when: docker_check.rc != 0
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=arm64] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable"
+        state: present
+      when: docker_check.rc != 0 and ansible_architecture == "aarch64"
+
+    - name: Install Docker CE
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+        state: present
+        update_cache: yes
+      when: docker_check.rc != 0
+
+    - name: Start Docker
+      systemd:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Install K3s with Docker runtime
+      shell: curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--docker" sh -
+      register: k3s_install
+      
+    - name: Wait for K3s API server to be ready
+      wait_for:
+        port: 6443
+        host: "{{ ansible_host }}"
+        delay: 5
+        timeout: 120
+        
+    - name: Wait for K3s service to be active
+      shell: systemctl is-active k3s
+      register: k3s_status
+      until: k3s_status.stdout == "active"
+      retries: 12
+      delay: 10
+      
+    - name: Verify K3s cluster is ready
+      shell: k3s kubectl get nodes
+      register: nodes_check
+      until: nodes_check.rc == 0
+      retries: 6
+      delay: 10
+
+    - name: Get join token
+      shell: cat /var/lib/rancher/k3s/server/node-token
+      register: token
+      retries: 3
+      delay: 5
+      until: token.rc == 0
+
+    - name: Verify token exists
+      fail:
+        msg: "Failed to get K3s join token"
+      when: token.stdout == ""
+
+    - name: Set token for workers
+      set_stats:
+        data:
+          k3s_join_token: "{{ token.stdout }}"
+          k3s_server_url: "https://{{ ansible_host }}:6443"
+          manager_ip: "{{ ansible_host }}"
+
+    - name: Final verification
+      debug:
+        msg:
+          - "K3s master setup complete"
+          - "API server: https://{{ ansible_host }}:6443"
+          - "Token: {{ token.stdout[:20] }}..."

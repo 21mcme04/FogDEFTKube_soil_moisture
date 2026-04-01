@@ -1,0 +1,56 @@
+tosca_definitions_version: tosca_simple_yaml_1_3
+
+description: |
+  TOSCA node type for deploying applications to K3s cluster.
+
+node_types:
+  fog.k3s.Services:
+    derived_from: tosca.nodes.SoftwareComponent
+
+    properties:
+      name:
+        type: string
+        description: Name of the Kubernetes deployment/namespace.
+        required: true
+      # deployment_host_ip:
+      #   type: string
+      #   description: IP address of the K3s master node.
+      #   required: true
+      # deployment_host_user_name:
+      #   type: string
+      #   description: SSH username for the K3s master node.
+      #   required: true
+      url:
+        type: string
+        description: URL of the Kubernetes manifest file to be deployed.
+        required: true
+      namespace:
+        type: string
+        description: Kubernetes namespace for deployment.
+        default: "default"
+      mqtt_broker_url:
+        type: string
+        description: MQTT broker service URL from the deployed stack
+        default: ""
+
+    interfaces:
+      Standard:
+        type: tosca.interfaces.node.lifecycle.Standard
+
+        inputs:
+          name:
+            value: { get_property: [SELF, name] }
+          deployment_host_ip:
+            value: { get_attribute: [HOST, private_address] }
+          deployment_host_user_name:
+            value: { get_property: [HOST, ssh_user] }
+          url:
+            value: { get_property: [SELF, url] }
+          namespace:
+            value: { get_property: [SELF, namespace] }
+
+        operations:
+          create:
+            implementation: playbooks/create_k3s_stack.yaml
+          delete:
+            implementation: playbooks/delete_k3s_stack.yaml

@@ -1,0 +1,98 @@
+---
+- name: Add worker to inventory
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Add worker host to inventory
+      add_host:
+        name: "{{ worker_ip }}"
+        ansible_host: "{{ worker_ip }}"
+        ansible_user: "{{ worker_user_name }}"
+        groups: k3s_worker
+
+- name: Leave the K3s cluster
+  hosts: k3s_worker
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Check if K3s agent is running
+      shell: systemctl is-active k3s-agent
+      register: k3s_status
+      ignore_errors: true
+      changed_when: false
+
+    - name: Debug K3s agent status
+      debug:
+        msg: "K3s agent status: {{ k3s_status.stdout | default('not found') }}"
+
+    - name: Stop K3s agent processes
+      shell: k3s-agent-killall.sh
+      ignore_errors: true
+      when: k3s_status.stdout == "active"
+
+    - name: Stop K3s agent service
+      systemd:
+        name: k3s-agent
+        state: stopped
+      ignore_errors: true
+
+    - name: Disable K3s agent service
+      systemd:
+        name: k3s-agent
+        enabled: false
+      ignore_errors: true
+
+    - name: Uninstall K3s agent
+      shell: /usr/local/bin/k3s-agent-uninstall.sh
+      ignore_errors: true
+      register: uninstall_result
+
+    - name: Debug uninstall result
+      debug:
+        msg: "K3s agent uninstall result: {{ uninstall_result.rc | default('failed') }}"
+
+    - name: Clean up K3s directories
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/rancher/k3s
+        - /var/lib/rancher/k3s
+        - /var/lib/kubelet
+      ignore_errors: true
+
+    - name: Clean up K3s binaries
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /usr/local/bin/k3s
+        - /usr/local/bin/kubectl
+        - /usr/local/bin/crictl
+        - /usr/local/bin/k3s-agent-killall.sh
+        - /usr/local/bin/k3s-agent-uninstall.sh
+      ignore_errors: true
+
+    - name: Clean up systemd files
+      file:
+        path: /etc/systemd/system/k3s-agent.service
+        state: absent
+      ignore_errors: true
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: true
+
+    - name: Verify K3s agent removal
+      shell: systemctl is-active k3s-agent
+      register: final_status
+      ignore_errors: true
+      changed_when: false
+
+    - name: Show removal summary
+      debug:
+        msg:
+          - "K3s Worker Leave Summary"
+          - "Worker IP: {{ ansible_host }}"
+          - "Final agent status: {{ final_status.stdout | default('inactive') }}"
+          - "Leave status: {{ 'SUCCESS' if final_status.stdout == 'inactive' else 'PARTIAL' }}"

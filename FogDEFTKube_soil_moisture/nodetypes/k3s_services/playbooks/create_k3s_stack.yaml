@@ -1,0 +1,115 @@
+---
+- name: Create K3s stack
+  hosts: localhost
+  gather_facts: false
+  vars:
+    # These variables will be passed from TOSCA
+    deployment_host_ip: "{{ deployment_host_ip }}"
+    deployment_host_user_name: "{{ deployment_host_user_name }}"
+    name: "{{ name }}"
+    url: "{{ url }}"
+    namespace: "{{ namespace | default('fogdeft-stack') }}"
+  tasks:
+    - name: Debug variables
+      ansible.builtin.debug:
+        msg:
+          - "Host IP: {{ deployment_host_ip }}"
+          - "User: {{ deployment_host_user_name }}"
+          - "Stack: {{ name }}"
+          - "Manifest file URL: {{ url }}"
+          - "Namespace: {{ namespace }}"
+
+    - name: Add deployment host to inventory
+      add_host:
+        name: "{{ deployment_host_ip }}"
+        ansible_host: "{{ deployment_host_ip }}"
+        ansible_user: "{{ deployment_host_user_name }}"
+        groups: k3s_stack_hosts
+
+- name: Deploy k3s stack on target host
+  hosts: k3s_stack_hosts
+  gather_facts: false
+  become: true
+  vars:
+    name: "{{ hostvars['localhost']['name'] }}"
+    url: "{{ hostvars['localhost']['url'] }}"
+    namespace: "{{ hostvars['localhost']['namespace'] }}"
+  tasks:
+    - name: Ensure /tmp/stacks directory exists on target host
+      ansible.builtin.file:
+        path: "/tmp/stacks"
+        state: directory
+        mode: "0755"
+
+    - name: Download K3s manifest file from URL
+      ansible.builtin.get_url:
+        url: "{{ url }}"
+        dest: "/tmp/stacks/{{ name }}.yaml"
+        mode: "0644"
+      register: download_result
+
+    - name: Debug download result
+      ansible.builtin.debug:
+        msg: "Downloaded manifest to: /tmp/stacks/{{ name }}.yaml"
+
+    - name: Deploy the K3s Stack using k3s kubectl
+      ansible.builtin.shell: >
+        k3s kubectl apply -f /tmp/stacks/{{ name }}.yaml
+      register: deploy_result
+
+    - name: Display deployment result
+      ansible.builtin.debug:
+        msg:
+          - "Deployment stdout: {{ deploy_result.stdout_lines }}"
+          - "Deployment stderr: {{ deploy_result.stderr_lines | default([]) }}"
+          - "Return code: {{ deploy_result.rc }}"
+
+    - name: Wait for namespace to be created
+      ansible.builtin.shell: >
+        k3s kubectl get namespace {{ namespace }}
+      register: namespace_check
+      until: namespace_check.rc == 0
+      retries: 5
+      delay: 10
+
+    - name: Wait for pods to be ready
+      ansible.builtin.shell: >
+        k3s kubectl get pods -n {{ namespace }} --no-headers
+      register: pod_status
+      until: pod_status.stdout.find("Running") != -1 or pod_status.stdout.find("ContainerCreating") != -1
+      retries: 10
+      delay: 15
+      ignore_errors: true
+
+    - name: Debug pod status
+      ansible.builtin.debug:
+        msg: "Pod status: {{ pod_status.stdout_lines | default(['No pods found']) }}"
+
+    - name: Get MQTT broker service details
+      ansible.builtin.shell: >
+        k3s kubectl get service mqtt-broker -n {{ namespace }} -o jsonpath='{.spec.clusterIP}'
+      register: mqtt_service_ip
+      ignore_errors: true
+
+    - name: Set MQTT broker URL based on K3s service discovery
+      ansible.builtin.set_fact:
+        mqtt_broker_url: "mqtt-broker.{{ namespace }}.svc.cluster.local:1883"
+      when: deploy_result.rc == 0
+
+    - name: Debug the MQTT broker URL being set
+      ansible.builtin.debug:
+        msg: "Setting MQTT broker URL to: {{ mqtt_broker_url }}"
+
+    - name: Set MQTT broker URL as TOSCA attribute
+      ansible.builtin.set_stats:
+        data:
+          mqtt_broker_url: "{{ mqtt_broker_url }}"
+        per_host: false
+      when: mqtt_broker_url is defined
+
+    - name: Display final deployment status
+      ansible.builtin.debug:
+        msg:
+          - "Stack deployment: {{ 'SUCCESS' if deploy_result.rc == 0 else 'FAILED' }}"
+          - "MQTT Broker URL: {{ mqtt_broker_url | default('Not set') }}"
+          - "Namespace: {{ namespace }}"

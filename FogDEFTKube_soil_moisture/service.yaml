@@ -1,0 +1,155 @@
+tosca_definitions_version: tosca_simple_yaml_1_3
+
+description: |
+  Service template for FogDEFT using TOSCA.
+  Tools used are:
+  - XOpera (TOSCA orchestrator)
+  - TOSCA (Topology and Orchestration Specification for Cloud Applications)
+  - Ansible (for configuration management)
+  - Docker (for containerization)
+  - Kubernetes k3s (for container orchestration)
+
+metadata:
+  template_name: "service.yaml"
+  template_version: "1.0"
+  template_author: "Saathvikk"
+  date_created: "08-09-2025"
+  date_modified: ""
+  description: |
+    Service template for FogDEFT using TOSCA and XOpera. This uses services to deploy
+    some of the FogDEFT platform using Docker and Kubernetes k3s.
+
+imports:
+  - nodetypes/k3s_leader/k3s_leader.yaml
+  - relationshiptypes/token_transfer/token_transfer.yaml
+  - nodetypes/k3s_worker/k3s_worker.yaml
+  # - nodetypes/docker_deployment/docker_deployment.yaml
+  - nodetypes/system_service/system_service.yaml
+  - nodetypes/k3s_services/k3s_services.yaml
+
+node_types:
+  fog.nodes.Compute:
+    derived_from: tosca.nodes.Compute
+    properties:
+      ssh_user:
+        type: string
+        description: SSH username for the compute node
+        required: true
+        
+topology_template:
+  inputs:
+    fog-node-1-ip:
+      type: string
+      description: IP address of the Docker Swarm manager node.
+    fog-node-1-user-name:
+      type: string
+      description: SSH username for the Docker Swarm manager node.
+    fog-node-2-ip:
+      type: string
+      description: IP address of the first Docker Swarm worker node.
+    fog-node-2-user-name:
+      type: string
+      description: SSH username for the first Docker Swarm worker node.
+    fog-node-3-ip:
+      type: string
+      description: IP address of the second Docker Swarm worker node.
+    fog-node-3-user-name:
+      type: string
+      description: SSH username for the second Docker Swarm worker node.
+
+  node_templates:
+    fog-node-1:
+      type: fog.nodes.Compute
+      properties:
+        ssh_user: { get_input: fog-node-1-user-name }
+      attributes:
+        public_address: { get_input: fog-node-1-ip }
+        private_address: { get_input: fog-node-1-ip }
+
+    fog-node-2:
+      type: fog.nodes.Compute
+      properties:
+        ssh_user: { get_input: fog-node-2-user-name }
+      attributes:
+        public_address: { get_input: fog-node-2-ip }
+        private_address: { get_input: fog-node-2-ip }
+
+    fog-node-3:
+      type: fog.nodes.Compute
+      properties:
+        ssh_user: { get_input: fog-node-3-user-name }
+      attributes:
+        public_address: { get_input: fog-node-3-ip }
+        private_address: { get_input: fog-node-3-ip }
+
+    k3s-leader:
+      type: fog.k3s.Leader
+      requirements:
+        - host: fog-node-1
+
+    k3s-worker-1:
+      type: fog.k3s.Worker
+      requirements:
+        - host: fog-node-2
+        - leader: k3s-leader
+
+    k3s-worker-2:
+      type: fog.k3s.Worker
+      requirements:
+        - host: fog-node-3
+        - leader: k3s-leader
+
+    # Deploy the ENTIRE Application Stack
+    k3s-service-1:
+      type: fog.k3s.Services
+      properties:
+        name: "fogdeft_stack"
+        # deployment_host_ip: { get_attribute: [fog-node-1, public_address] }
+        # deployment_host_user_name: { get_property: [fog-node-1, ssh_user] }
+        url: "https://gist.githubusercontent.com/21mcme04/68c7edc0b0c5653ecd2e138683f3d568/raw/37568afee75c263d8dc7db12fd2aab80fd8598b5/k3s-fogdeft-soil_moisture-manifest.yaml"
+        namespace: "fogdeft-stack"
+      requirements:
+        - host: fog-node-1
+        - dependency: k3s-leader
+        - dependency: k3s-worker-1
+        - dependency: k3s-worker-2
+
+    # publisher as a daemon
+    system-service-1:
+      type: fog.system.Service
+      properties:
+        # deployment_host_ip: { get_attribute: [fog-node-2, public_address] }
+        # deployment_host_user_name: { get_property: [fog-node-2, ssh_user] }
+        service_name: "mqtt_publisher_service"
+        script_url: "https://gist.githubusercontent.com/21mcme04/acdea1dfc4483d79a3510945ef201e64/raw/9b3c0015d971d4018bfb72fb2e742fe04526531c/publisher-soil-moisture.py"
+        service_url: "https://gist.githubusercontent.com/21mcme04/afea367578782de63f55c101bbcfd803/raw/c090a0f19a24b73c4bba3ec011c49853f425de70/publisher.service"
+        broker_url:
+          {
+            concat: [{ get_attribute: [fog-node-1, public_address] }, ":31883"],
+          }
+        packages:
+          - paho-mqtt
+          - RPi.GPIO
+      requirements:
+        - host: fog-node-2
+        - dependency: k3s-service-1
+
+    # actuator as a daemon
+    system-service-2:
+      type: fog.system.Service
+      properties:
+        # deployment_host_ip: { get_attribute: [fog-node-3, public_address] }
+        # deployment_host_user_name: { get_property: [fog-node-3, ssh_user] }
+        service_name: "actuator_service"
+        script_url: "https://gist.githubusercontent.com/21mcme04/ffcfc4f88ca37fc0ab03c4cc2a1ef254/raw/8322fb0710b0e9f7ff0940631fc08a0ab65d3ea5/actuator-soil-servo.py"
+        service_url: "https://gist.githubusercontent.com/21mcme04/c4e5d5ad16527b07fbcd75c7aefa4bfb/raw/fff089033be5fd1b1dc63ac540c0155c40b074e1/actuator.service"
+        broker_url:
+          {
+            concat: [{ get_attribute: [fog-node-1, public_address] }, ":31883"],
+          }
+        packages:
+          - paho-mqtt
+          - RPi.GPIO
+      requirements:
+        - host: fog-node-3
+        - dependency: k3s-service-1

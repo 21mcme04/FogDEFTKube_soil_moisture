@@ -1,0 +1,60 @@
+tosca_definitions_version: tosca_simple_yaml_1_3
+
+description: >
+  This is a TOSCA service to establish a kubernetes cluster using
+  a manager node and multiple worker nodes (three in this case).
+
+metadata:
+  template_name: "kubernetes_cluster.yaml"
+  template_version: "1.0"
+  template_author: "Saathvikk"
+  date_created: "08-09-2025"
+  date_modified: ""
+  description: "TOSCA service for establishing a Kubernetes cluster."
+
+node_types:
+  fog.k3s.Leader:
+    derived_from: tosca.nodes.SoftwareComponent
+
+    attributes:
+      k3s_join_token:
+        description: Token for worker nodes to join the Kubernetes cluster
+        type: string
+
+      k3s_server_url:
+        description: URL of the K3s server
+        type: string
+
+      manager_ip:
+        description: IP address of the Kubernetes master node
+        type: string
+
+    requirements:
+      - host:
+          capability: tosca.capabilities.Compute
+          relationship: tosca.relationships.HostedOn
+
+    capabilities:
+      host:
+        type: tosca.capabilities.Container
+        occurrences: [1, UNBOUNDED]
+        valid_source_types: [fog.k3s.Worker]
+
+    interfaces:
+      Standard:
+        type: tosca.interfaces.node.lifecycle.Standard
+
+        inputs:
+          manager_ip:
+            description: IP address of the Kubernetes master node
+            value: { get_attribute: [HOST, public_address] }
+            type: string
+
+          manager_user_name:
+            description: SSH username for the Kubernetes master node
+            value: { get_property: [HOST, ssh_user] }
+            type: string
+
+        operations:
+          create: playbooks/create_kubernetes.yaml
+          delete: playbooks/delete_kubernetes.yaml

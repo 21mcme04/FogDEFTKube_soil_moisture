@@ -1,0 +1,33 @@
+---
+- name: Add manager to inventory
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Add manager host to inventory
+      add_host:
+        name: "{{ manager_ip }}"
+        ansible_host: "{{ manager_ip }}"
+        ansible_user: "{{ manager_user_name }}"
+        groups: k3s_manager
+
+- name: Remove K3s
+  hosts: k3s_manager
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Stop K3s processes
+      shell: k3s-killall.sh
+      ignore_errors: true
+
+    - name: Uninstall K3s
+      shell: /usr/local/bin/k3s-uninstall.sh
+      ignore_errors: true
+
+    - name: Clean up directories
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/rancher/k3s
+        - /var/lib/rancher/k3s
+      ignore_errors: true

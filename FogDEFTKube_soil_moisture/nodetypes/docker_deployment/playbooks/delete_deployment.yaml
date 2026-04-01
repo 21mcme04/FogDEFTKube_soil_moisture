@@ -1,0 +1,54 @@
+---
+- name: Add hosts to inventory
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Add manager host to inventory
+      add_host:
+        name: "{{ deployment_host_ip }}"
+        ansible_host: "{{ deployment_host_ip }}"
+        ansible_user: "{{ deployment_host_user_name }}"
+        groups: swarm_manager
+
+- name: Delete Docker deployment from manager
+  hosts: swarm_manager
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Debug deletion parameters
+      debug:
+        msg:
+          - "Removing service: {{ svc_name }}"
+          - "Manager: {{ deployment_host_ip }}"
+
+    - name: Check if service exists
+      shell: docker service ls --filter name={{ svc_name }} --format "{{ "{{" }}.Name{{ "}}" }}"
+      register: service_exists
+      changed_when: false
+      ignore_errors: true
+
+    - name: Debug service existence
+      debug:
+        msg: "Service exists: {{ service_exists.stdout }}"
+
+    - name: Remove Docker service
+      command: docker service rm {{ svc_name }}
+      register: remove_service_result
+      when: service_exists.stdout == svc_name
+      ignore_errors: true
+
+    - name: Debug service removal result
+      debug:
+        msg:
+          - "Return code: {{ remove_service_result.rc | default('skipped') }}"
+          - "Stdout: {{ remove_service_result.stdout | default('skipped') }}"
+          - "Stderr: {{ remove_service_result.stderr | default('skipped') }}"
+
+    - name: List remaining services
+      command: docker service ls
+      register: remaining_services
+      changed_when: false
+
+    - name: Debug remaining services
+      debug:
+        var: remaining_services.stdout_lines

@@ -1,0 +1,58 @@
+tosca_definitions_version: tosca_simple_yaml_1_3
+
+description: Setting up a kubernetes k3s worker node and joining it to the cluster
+
+metadata:
+  template_name: "kubernetes_worker.yaml"
+  template_version: "1.0"
+  template_author: "Saathvikk"
+  date_created: "08-09-2025"
+  date_modified: ""
+  description: "TOSCA service for setting up a kubernetes k3s worker node."
+
+node_types:
+  fog.k3s.Worker:
+    derived_from: tosca.nodes.SoftwareComponent
+
+    requirements:
+      - leader:
+          capability: tosca.capabilities.Container
+          relationship: fog.k3s.relationships.TokenTransfer
+
+      - host:
+          capability: tosca.capabilities.Compute
+          relationship: tosca.relationships.HostedOn
+
+    capabilities:
+      host:
+        type: tosca.capabilities.Container
+        occurrences: [0, UNBOUNDED]
+
+    interfaces:
+      Standard:
+        type: tosca.interfaces.node.lifecycle.Standard
+
+        inputs:
+          k3s_join_token:
+            description: Token for the worker node to join the k3s cluster
+            value: { get_attribute: [SELF, leader, k3s_join_token] }
+            type: string
+
+          manager_ip:
+            description: IP address of the Docker Swarm manager node
+            value: { get_attribute: [SELF, leader, manager_ip] }
+            type: string
+
+          worker_ip:
+            description: IP address of the Docker Swarm worker node
+            value: { get_attribute: [HOST, public_address] }
+            type: string
+
+          worker_user_name:
+            description: SSH username for the Docker Swarm worker node
+            value: { get_property: [HOST, ssh_user] }
+            type: string
+
+        operations:
+          create: playbooks/join_k3s.yaml
+          delete: playbooks/leave_k3s.yaml
