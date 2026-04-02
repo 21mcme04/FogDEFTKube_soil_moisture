@@ -1,0 +1,5 @@
+resources:
+  - cluster.yaml
+  - controlplane.yaml
+  - remotecluster.yaml
+  - machines.yaml

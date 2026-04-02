@@ -1,0 +1,9 @@
+apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+kind: K0smotronControlPlane
+metadata:
+  name: pi-cluster-cp
+  namespace: default
+spec:
+  version: v1.30.0+k0s.0
+  service:
+    type: NodePort

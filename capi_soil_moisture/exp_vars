@@ -1,0 +1,7 @@
+export KUBECONFIG=$PWD/pi-cluster-kubeconfig.yaml
+export MASTER_IP="192.168.0.204"
+export PUBLISHER_IP="192.168.0.76"
+export ACTUATOR_IP="192.168.0.237"
+export BROKER_URL="${MASTER_IP}:31883"
+export BROKER_IP="${MASTER_IP}"
+export BROKER_PORT="31883"

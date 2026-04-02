@@ -1,0 +1,4 @@
+resources:
+  - cluster/
+  - apps/soil_moisture/
+  - secrets/
