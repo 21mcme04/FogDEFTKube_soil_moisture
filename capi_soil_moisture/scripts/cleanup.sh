@@ -1,8 +1,21 @@
 #!/bin/bash
-source ../exp_vars
+set -euo pipefail
+
+# Force script to run from the root of capi_soil_moisture directory
+cd "$(dirname "$0")/.." || exit 1
+
+# Save default kubeconfig (Management Cluster) before overwriting
+MGMT_KUBECONFIG=${KUBECONFIG:-~/.kube/config}
+
+# Load variables (sets KUBECONFIG to workload cluster path)
+source ./exp_vars
+
+echo "Deleting app workloads from Workload Cluster..."
+kubectl delete -k ./apps/soil_moisture --ignore-not-found=true || true
 
 echo "Deleting CAPI Cluster resources..."
-kubectl delete cluster pi-cluster
+KUBECONFIG="$MGMT_KUBECONFIG" kubectl delete -k ./cluster --ignore-not-found=true || true
+KUBECONFIG="$MGMT_KUBECONFIG" kubectl delete cluster pi-cluster --ignore-not-found=true || true
 
 echo "Cleaning up edge daemons on Raspberry Pi worker nodes..."
 
